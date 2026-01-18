@@ -1,4 +1,4 @@
-// Agent persona definitions loaded from .github/agents/*.md files
+// Agent persona definitions loaded from .github/agents/*.agent.md files
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -13,8 +13,16 @@ interface Persona {
     systemPrompt: string;
 }
 
+// Emoji mapping for display purposes (not part of Copilot agent format)
+const AGENT_EMOJIS: Record<string, string> = {
+    "eli5": "🧒",
+    "tech-expert": "🔬",
+    "analogy-master": "🌉",
+    "code-roaster": "🔥"
+};
+
 /**
- * Parse a markdown file with YAML frontmatter into a Persona
+ * Parse a Copilot custom agent .agent.md file into a Persona
  */
 function parsePersonaFile(filename: string): Persona {
     // Navigate from src/ up to project root, then into .github/agents/
@@ -29,24 +37,25 @@ function parsePersonaFile(filename: string): Persona {
     
     const [, frontmatter, body] = frontmatterMatch;
     
-    // Simple YAML parsing for our known fields
+    // Simple YAML parsing for Copilot agent fields
     const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
-    const emojiMatch = frontmatter.match(/^emoji:\s*(.+)$/m);
     const descriptionMatch = frontmatter.match(/^description:\s*(.+)$/m);
     
+    const name = nameMatch?.[1]?.trim() || "Unknown";
+    
     return {
-        name: nameMatch?.[1]?.trim() || "Unknown",
-        emoji: emojiMatch?.[1]?.trim() || "🤖",
+        name,
+        emoji: AGENT_EMOJIS[name] || "🤖",
         description: descriptionMatch?.[1]?.trim() || "",
         systemPrompt: body.trim()
     };
 }
 
 export const AGENT_PERSONAS = {
-    eli5: parsePersonaFile("eli5.md"),
-    tech: parsePersonaFile("tech.md"),
-    analogy: parsePersonaFile("analogy.md"),
-    roast: parsePersonaFile("roast.md")
+    eli5: parsePersonaFile("eli5.agent.md"),
+    tech: parsePersonaFile("tech.agent.md"),
+    analogy: parsePersonaFile("analogy.agent.md"),
+    roast: parsePersonaFile("roast.agent.md")
 };
 
 export type PersonaKey = keyof typeof AGENT_PERSONAS;
