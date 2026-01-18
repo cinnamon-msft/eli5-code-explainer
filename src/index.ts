@@ -1,43 +1,74 @@
 import inquirer from "inquirer";
+import chalk from "chalk";
+import ora from "ora";
 import { AgentManager } from "./manager.js";
 import { PersonaKey } from "./personas.js";
 import { connectFilesystemMcp, connectGitMcp, disconnectMcpServer, McpConnection } from "./mcp/client.js";
-import { displayWelcome, displayResponse, displayAllResponses, displayAgentMenu, showError } from "./ui/display.js";
-import chalk from "chalk";
+import { 
+    displayWelcome, 
+    displayResponse, 
+    displayAllResponses, 
+    displayAgentMenu, 
+    showError,
+    showAgentGreeting,
+    showConversationPrompt,
+    showGoodbye,
+    createAgentSpinner
+} from "./ui/display.js";
+
+// Agent metadata for display
+const AGENTS: Record<PersonaKey, { emoji: string; name: string; key: string }> = {
+    eli5: { emoji: "🧒", name: "ELI5", key: "eli5" },
+    tech: { emoji: "🔬", name: "Tech Expert", key: "tech-expert" },
+    analogy: { emoji: "🌉", name: "Analogy Master", key: "analogy-master" },
+    roast: { emoji: "🔥", name: "Code Roaster", key: "code-roaster" }
+};
 
 async function main() {
     displayWelcome();
 
     // Get the working directory
     const workingDir = process.argv[2] || process.cwd();
-    console.log(chalk.gray(`📂 Working directory: ${workingDir}\n`));
+    console.log(chalk.gray(`    📂 Working in: ${workingDir}\n`));
 
-    // Connect to MCP servers
+    // Connect to MCP servers with spinner
     const mcpConnections: McpConnection[] = [];
+    const connectSpinner = ora({
+        text: chalk.gray("Connecting to code analysis tools..."),
+        spinner: "dots"
+    }).start();
 
     try {
-        // Connect filesystem MCP
         const fsMcp = await connectFilesystemMcp(workingDir);
         mcpConnections.push(fsMcp);
-
-        // Try to connect git MCP (may fail if not a git repo)
+        
         try {
             const gitMcp = await connectGitMcp(workingDir);
             mcpConnections.push(gitMcp);
         } catch (e) {
-            console.log(chalk.yellow("⚠️  Not a git repository, git features disabled"));
+            // Git is optional
         }
+        connectSpinner.succeed(chalk.gray("Connected to code analysis tools"));
     } catch (error) {
-        showError(`Failed to connect MCP servers: ${error}`);
+        connectSpinner.fail(chalk.red("Failed to connect to analysis tools"));
+        showError(`${error}`);
         process.exit(1);
     }
 
-    // Initialize agent manager
+    // Initialize agent manager with spinner
+    const initSpinner = ora({
+        text: chalk.gray("Waking up the agents..."),
+        spinner: "dots"
+    }).start();
+    
     const agentManager = new AgentManager();
     await agentManager.initialize(mcpConnections);
+    initSpinner.succeed(chalk.gray("All agents are ready to chat!"));
 
-    // Main interaction loop
+    // Main conversation loop
     let running = true;
+    let currentAgent: PersonaKey | null = null;
+    
     while (running) {
         displayAgentMenu();
 
@@ -45,8 +76,8 @@ async function main() {
             {
                 type: "input",
                 name: "choice",
-                message: "Select agent:",
-                default: "1"
+                message: chalk.cyan("Your choice:"),
+                prefix: "💭"
             }
         ]);
 
@@ -66,33 +97,46 @@ async function main() {
 
         const agentType = agentMap[choice];
         if (!agentType) {
-            showError("Invalid choice. Please try again.");
+            showError("I didn't understand that. Please pick 1-5 or 'q' to quit.");
             continue;
         }
 
-        // Get input - file path or code snippet
+        // Show agent greeting (if not "all")
+        if (agentType !== "all") {
+            const agent = AGENTS[agentType];
+            showAgentGreeting(agent.key, agent.emoji, agent.name);
+            currentAgent = agentType;
+        } else {
+            console.log(chalk.magenta("\n🎭 All agents are ready to share their perspectives!\n"));
+        }
+
+        // Get what they want to discuss
         const { inputType } = await inquirer.prompt([
             {
                 type: "list",
                 name: "inputType",
-                message: "What do you want to explain?",
+                message: agentType === "all" 
+                    ? "What should we discuss?" 
+                    : "What can I help you understand?",
+                prefix: agentType === "all" ? "🎭" : AGENTS[agentType].emoji,
                 choices: [
-                    { name: "📄 A file", value: "file" },
-                    { name: "📝 Paste code", value: "code" },
-                    { name: "❓ Ask about the codebase", value: "question" }
+                    { name: "📄 Read and explain a file", value: "file" },
+                    { name: "📝 Explain code I'll paste", value: "code" },
+                    { name: "❓ Answer a question about the codebase", value: "question" },
+                    { name: "← Go back", value: "back" }
                 ]
             }
         ]);
 
-        let code = "";
-        let question = "";
+        if (inputType === "back") continue;
 
         if (inputType === "file") {
             const { filePath } = await inquirer.prompt([
                 {
                     type: "input",
                     name: "filePath",
-                    message: "Enter file path (relative to working directory):"
+                    message: "Which file?",
+                    prefix: "📄"
                 }
             ]);
 
@@ -100,27 +144,44 @@ async function main() {
                 {
                     type: "input",
                     name: "fileQuestion",
-                    message: "Any specific question? (press Enter to skip):",
+                    message: "Any specific aspect to focus on?",
+                    prefix: "🎯",
                     default: ""
                 }
             ]);
 
-            question = fileQuestion;
-
             try {
-                const response = await agentManager.explainFile(filePath, agentType, question || undefined);
-                
-                if (Array.isArray(response)) {
-                    displayAllResponses(response);
+                if (agentType === "all") {
+                    const spinner = ora({
+                        text: chalk.magenta("🎭 Gathering perspectives from all agents..."),
+                        spinner: "dots"
+                    }).start();
+                    
+                    const responses = await agentManager.explainFile(filePath, agentType, fileQuestion || undefined);
+                    spinner.stop();
+                    
+                    if (Array.isArray(responses)) {
+                        displayAllResponses(responses);
+                    }
                 } else {
-                    displayResponse(response);
+                    const agent = AGENTS[agentType];
+                    const spinner = createAgentSpinner(agent.key, agent.emoji);
+                    spinner.start();
+                    
+                    const response = await agentManager.explainFile(filePath, agentType, fileQuestion || undefined);
+                    spinner.stop();
+                    
+                    if (!Array.isArray(response)) {
+                        displayResponse(response);
+                    }
                 }
             } catch (error) {
-                showError(`Failed to read file: ${error}`);
+                showError(`Couldn't read that file: ${error}`);
             }
 
         } else if (inputType === "code") {
-            console.log(chalk.gray("Paste your code (end with a line containing only 'END'):"));
+            console.log(chalk.gray("\n  Paste your code below. Type 'END' on a new line when done:\n"));
+            console.log(chalk.gray("  ─".repeat(30)));
             
             const lines: string[] = [];
             const readline = await import("readline");
@@ -131,8 +192,8 @@ async function main() {
 
             await new Promise<void>((resolve) => {
                 const readLine = () => {
-                    rl.question("", (line) => {
-                        if (line.trim() === "END") {
+                    rl.question(chalk.gray("  │ "), (line) => {
+                        if (line.trim().toUpperCase() === "END") {
                             rl.close();
                             resolve();
                         } else {
@@ -144,22 +205,35 @@ async function main() {
                 readLine();
             });
 
-            code = lines.join("\n");
+            console.log(chalk.gray("  ─".repeat(30)));
+            const code = lines.join("\n");
 
             const { codeQuestion } = await inquirer.prompt([
                 {
                     type: "input",
                     name: "codeQuestion",
-                    message: "Any specific question? (press Enter to skip):",
-                    default: ""
+                    message: "What would you like to know about this code?",
+                    prefix: "🎯",
+                    default: "Explain what this does"
                 }
             ]);
 
             if (agentType === "all") {
+                const spinner = ora({
+                    text: chalk.magenta("🎭 Gathering perspectives from all agents..."),
+                    spinner: "dots"
+                }).start();
+                
                 const responses = await agentManager.explainWithAll(code, codeQuestion || undefined);
+                spinner.stop();
                 displayAllResponses(responses);
             } else {
+                const agent = AGENTS[agentType];
+                const spinner = createAgentSpinner(agent.key, agent.emoji);
+                spinner.start();
+                
                 const response = await agentManager.explain(agentType, code, codeQuestion || undefined);
+                spinner.stop();
                 displayResponse(response);
             }
 
@@ -168,37 +242,56 @@ async function main() {
                 {
                     type: "input",
                     name: "generalQuestion",
-                    message: "What would you like to know about this codebase?"
+                    message: "What would you like to know?",
+                    prefix: "💬"
                 }
             ]);
 
-            // For general questions, we let the agent explore using MCP tools
-            if (agentType === "all") {
-                // For simplicity, just use eli5 for general questions
-                const response = await agentManager.explain(
-                    "eli5",
-                    `[No specific code provided - this is a general question about the codebase]`,
-                    generalQuestion
-                );
-                displayResponse(response);
-            } else {
-                const response = await agentManager.explain(
-                    agentType,
-                    `[No specific code provided - this is a general question about the codebase]`,
-                    generalQuestion
-                );
-                displayResponse(response);
+            const targetAgent = agentType === "all" ? "eli5" as PersonaKey : agentType;
+            const agent = AGENTS[targetAgent];
+            
+            const spinner = createAgentSpinner(agent.key, agent.emoji);
+            spinner.start();
+            
+            const response = await agentManager.explain(
+                targetAgent,
+                `[General question about the codebase - no specific code provided]`,
+                generalQuestion
+            );
+            
+            spinner.stop();
+            displayResponse(response);
+        }
+
+        // Ask if they want to continue chatting
+        const { continueChat } = await inquirer.prompt([
+            {
+                type: "confirm",
+                name: "continueChat",
+                message: "Would you like to ask something else?",
+                prefix: "💭",
+                default: true
             }
+        ]);
+
+        if (!continueChat) {
+            running = false;
         }
     }
 
     // Cleanup
+    const shutdownSpinner = ora({
+        text: chalk.gray("Saying goodbye to the agents..."),
+        spinner: "dots"
+    }).start();
+    
     await agentManager.shutdown();
     for (const conn of mcpConnections) {
         await disconnectMcpServer(conn);
     }
-
-    console.log(chalk.cyan("\n👋 Thanks for using ELI5 Code Explainer!\n"));
+    
+    shutdownSpinner.stop();
+    showGoodbye();
 }
 
 main().catch(console.error);
