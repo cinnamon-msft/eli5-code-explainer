@@ -55,11 +55,12 @@ export async function connectFilesystemMcp(rootPath: string): Promise<McpConnect
 
 /**
  * Connect to the git MCP server
+ * Note: Uses the official MCP git server package
  */
 export async function connectGitMcp(repoPath: string): Promise<McpConnection> {
     return connectMcpServer(
         "git",
         "npx",
-        ["-y", "@anthropic-ai/mcp-server-git", "--repository", repoPath]
+        ["-y", "@modelcontextprotocol/server-git", "--repository", repoPath]
     );
 }
