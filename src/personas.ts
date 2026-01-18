@@ -27,7 +27,10 @@ const AGENT_EMOJIS: Record<string, string> = {
 function parsePersonaFile(filename: string): Persona {
     // Navigate from src/ up to project root, then into .github/agents/
     const filePath = join(__dirname, "..", ".github", "agents", filename);
-    const content = readFileSync(filePath, "utf-8");
+    let content = readFileSync(filePath, "utf-8");
+    
+    // Normalize line endings (Windows CRLF to LF)
+    content = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     
     // Parse YAML frontmatter
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
