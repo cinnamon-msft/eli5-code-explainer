@@ -134,7 +134,7 @@ export class AgentManager {
         const result = await fsMcp.client.callTool({
             name: "read_file",
             arguments: { path: filePath }
-        });
+        }) as { content: Array<{ text?: string }> };
 
         const code = result.content
             .map((c: any) => c.text || JSON.stringify(c))

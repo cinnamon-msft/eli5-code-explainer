@@ -3,7 +3,7 @@ import chalk from "chalk";
 import ora from "ora";
 import { AgentManager } from "./manager.js";
 import { PersonaKey } from "./personas.js";
-import { connectFilesystemMcp, connectGitMcp, disconnectMcpServer, McpConnection } from "./mcp/client.js";
+import { connectAllMcpServers, disconnectMcpServer, McpConnection } from "./mcp/client.js";
 import { 
     displayWelcome, 
     displayResponse, 
@@ -32,25 +32,37 @@ async function main() {
     console.log(chalk.gray(`    📂 Working in: ${workingDir}\n`));
 
     // Connect to MCP servers with spinner
-    const mcpConnections: McpConnection[] = [];
+    let mcpConnections: McpConnection[] = [];
     const connectSpinner = ora({
-        text: chalk.gray("Connecting to code analysis tools..."),
+        text: chalk.gray("Connecting to MCP servers..."),
         spinner: "dots"
     }).start();
 
     try {
-        const fsMcp = await connectFilesystemMcp(workingDir);
-        mcpConnections.push(fsMcp);
+        const { connections, errors } = await connectAllMcpServers(workingDir);
+        mcpConnections = connections;
         
-        try {
-            const gitMcp = await connectGitMcp(workingDir);
-            mcpConnections.push(gitMcp);
-        } catch (e) {
-            // Git is optional
+        if (connections.length === 0) {
+            connectSpinner.fail(chalk.red("Failed to connect to any MCP servers"));
+            process.exit(1);
         }
-        connectSpinner.succeed(chalk.gray("Connected to code analysis tools"));
+        
+        // Show connected servers
+        const serverList = connections.map(c => c.name).join(", ");
+        connectSpinner.succeed(chalk.gray(`Connected to MCP servers: ${chalk.cyan(serverList)}`));
+        
+        // Show optional server info
+        if (errors.length > 0) {
+            for (const err of errors) {
+                if (err.name === "git") {
+                    console.log(chalk.gray(`    ℹ️  Git server skipped (uvx not available or not in git repo)`));
+                } else if (err.name === "github") {
+                    console.log(chalk.gray(`    ℹ️  GitHub server skipped (no token set)`));
+                }
+            }
+        }
     } catch (error) {
-        connectSpinner.fail(chalk.red("Failed to connect to analysis tools"));
+        connectSpinner.fail(chalk.red("Failed to connect to MCP servers"));
         showError(`${error}`);
         process.exit(1);
     }

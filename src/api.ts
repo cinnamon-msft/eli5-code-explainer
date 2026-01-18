@@ -4,7 +4,7 @@
 import { AgentManager } from "./manager.js";
 import { PersonaKey } from "./personas.js";
 import { AgentResponse } from "./types.js";
-import { connectFilesystemMcp, connectGitMcp, McpConnection, disconnectMcpServer } from "./mcp/client.js";
+import { connectAllMcpServers, McpConnection, disconnectMcpServer } from "./mcp/client.js";
 
 export class ELI5Explainer {
     private agentManager: AgentManager;
@@ -17,27 +17,27 @@ export class ELI5Explainer {
 
     /**
      * Initialize the explainer with a working directory
+     * Automatically connects to available MCP servers:
+     * - Filesystem (always) - for reading local files
+     * - Git (if uvx available) - for git history and diffs
+     * - GitHub (if token set) - for GitHub repository access
      */
-    async init(workingDir: string = process.cwd()): Promise<void> {
-        if (this.initialized) return;
-
-        // Connect MCP servers
-        try {
-            const fsMcp = await connectFilesystemMcp(workingDir);
-            this.mcpConnections.push(fsMcp);
-        } catch (e) {
-            console.warn("Could not connect filesystem MCP");
+    async init(workingDir: string = process.cwd()): Promise<{ connectedServers: string[]; errors: string[] }> {
+        if (this.initialized) {
+            return { connectedServers: this.mcpConnections.map(c => c.name), errors: [] };
         }
 
-        try {
-            const gitMcp = await connectGitMcp(workingDir);
-            this.mcpConnections.push(gitMcp);
-        } catch (e) {
-            // Git MCP is optional
-        }
+        // Connect all available MCP servers
+        const { connections, errors } = await connectAllMcpServers(workingDir);
+        this.mcpConnections = connections;
 
         await this.agentManager.initialize(this.mcpConnections);
         this.initialized = true;
+
+        return {
+            connectedServers: connections.map(c => c.name),
+            errors: errors.map(e => `${e.name}: ${e.error}`)
+        };
     }
 
     /**

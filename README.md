@@ -167,9 +167,10 @@ md5("password123"). Respect.
 │           │                           │                      │
 │    ┌──────┴──────┐            ┌──────┴──────┐              │
 │    │ Copilot SDK │            │ MCP Servers │              │
-│    │  (GPT-5)    │            │             │              │
+│    │  (LLM)      │            │             │              │
 │    └─────────────┘            │ • Filesystem│              │
 │                               │ • Git       │              │
+│                               │ • GitHub    │              │
 │                               └─────────────┘              │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -177,8 +178,38 @@ md5("password123"). Respect.
 
 ## 📦 MCP Servers Used
 
-- **`@modelcontextprotocol/server-filesystem`** - Read files from your codebase
-- **`@anthropic-ai/mcp-server-git`** - Access git history and blame
+| Server | Package | Description |
+|--------|---------|-------------|
+| **Filesystem** | `@modelcontextprotocol/server-filesystem` | Read files from your codebase (always connected) |
+| **Git** | `mcp-server-git` | Access git history, diffs, and blame (requires `uvx`) |
+| **GitHub** | `@modelcontextprotocol/server-github` | Access GitHub repositories and PRs (requires token) |
+
+### Setting Up GitHub MCP Server
+
+To enable GitHub features, set your personal access token:
+
+```bash
+# Windows PowerShell
+$env:GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_your_token_here"
+
+# Windows CMD
+set GITHUB_PERSONAL_ACCESS_TOKEN=ghp_your_token_here
+
+# macOS/Linux
+export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_your_token_here
+```
+
+### Setting Up Git MCP Server
+
+The Git server requires Python and `uvx` (from the `uv` package manager):
+
+```bash
+# Install uv (includes uvx)
+pip install uv
+
+# Or on macOS with Homebrew
+brew install uv
+```
 
 ## 🔧 Configuration
 
